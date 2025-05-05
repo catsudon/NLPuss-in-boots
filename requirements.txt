@@ -1,0 +1,6 @@
+selenium
+paddleocr
+Pillow
+opencv-python
+numpy
+google-generativeai
