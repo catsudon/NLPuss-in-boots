@@ -85,39 +85,45 @@ def extract_screen_data(driver):
 
 
 # === Ask Gemini what to do ===
-def ask_llm_for_action(goal, elements):
+def ask_llm_for_action(goal, elements, history):
     model = genai.GenerativeModel("models/gemini-2.0-flash")
+
+    history_text = "\n".join(
+        [f"- Step {i+1}: ACTION: {h['action']}, INDEX: {h['index']}, TEXT: '{h['text']}', REASON: {h['reason']}"
+         for i, h in enumerate(history)]
+    ) if history else "None yet"
+
     prompt = f"""
-You are controlling a browser screen using pixel coordinates and detected text boxes.
+You are controlling a browser screen using pixel coordinates and detected OCR text boxes.
 
 User's goal: {goal}
 
-Here are the visible text elements:
+📌 System limitations:
+- You only see visible text elements and their pixel locations — not HTML or hidden elements.
+- You always press Enter after typing.
+- The system only sees English alphabet characters. Other languages may show up as unreadable text like "000000".
+- The user is navigating a webpage step by step. Your job is to decide the next UI action.
+- Sometimes search bars are already filled with text. If you can't find a place to type, consider clicking a clear (❌) button, a "back" button, or navigating to the main page.
+
+🕘 Prior steps:
+{history_text}
+
+🖼️ Visible text elements:
 """ + "\n".join(
         [f"{i}. '{el['text']}' at {el['bbox']}" for i, el in enumerate(elements)]
-    ) + """
+) + """
 
-Decide which index (if any) should be clicked or typed into.
+What should the system do next?
 
-If typing is needed, also provide the text.
-
-Respond in this exact format:
+Respond in this format:
 ACTION: click or type
 INDEX: index of the element
 TEXT: (only if typing, otherwise leave blank)
-
-Examples:
-ACTION: click
-INDEX: 3
-TEXT:
-
-ACTION: type
-INDEX: 2
-TEXT: python tutorial
+REASON: explain your choice
 """
 
     res = model.generate_content(prompt).text.strip()
-    action = {"action": None, "index": -1, "text": ""}
+    action = {"action": None, "index": -1, "text": "", "reason": ""}
     try:
         for line in res.splitlines():
             if line.startswith("ACTION:"):
@@ -126,9 +132,13 @@ TEXT: python tutorial
                 action["index"] = int(line.split(":", 1)[1].strip())
             elif line.startswith("TEXT:"):
                 action["text"] = line.split(":", 1)[1].strip()
+            elif line.startswith("REASON:"):
+                action["reason"] = line.split(":", 1)[1].strip()
     except Exception as e:
         print("⚠️ Failed to parse LLM response:", res)
     return action
+
+
 
 # === Click using JavaScript at pixel coordinates ===
 def click_at_pixel(driver, x, y):
@@ -188,20 +198,44 @@ def type_into_active_element(driver, text, press_enter=True):
 
 
 # === Ask Gemini if task is done ===
-def ask_if_task_is_done(goal, elements):
+def ask_if_task_is_done(goal, elements, last_action, history):
+
+
     model = genai.GenerativeModel("models/gemini-2.0-flash")
     visible = "\n".join([el["text"] for el in elements])
+    
+    action_summary = f"""
+Last action taken:
+- ACTION: {last_action['action']}
+- INDEX: {last_action['index']}
+- TEXT: {last_action['text']}
+- REASON: {last_action['reason']}
+"""
+
     prompt = f"""
 A user is trying to complete this task:
 
 {goal}
 
+⚠️ System limitations:
+- Only visible text and bounding boxes are available (not HTML).
+- After typing, Enter is automatically pressed.
+- The system only sees English characters. Non-English text may show as "000000".
+- Sometimes search bars are already filled with text. If you can't find a place to type, consider clicking a clear (❌) button, a "back" button, or navigating to the main page.
+
 The current visible screen contains:
 {visible}
 
-Has the task been completed? Reply only YES or NO. If NO, give advice.
+{action_summary}
+
+Has the task been completed? Respond in this format:
+DONE: YES or NO
+ADVICE: (If NO, explain what went wrong or what to try next)
 """
-    return model.generate_content(prompt).text.strip().upper()
+
+    return model.generate_content(prompt).text.strip()
+
+
 
 # === Main Loop ===
 start_url = input("🌍 Enter the URL to visit: ").strip()
@@ -215,6 +249,7 @@ print("🌐 Chrome started. Ready to take tasks.")
 
 while True:
     user_input = input("💬 Goal: ").strip()
+    history = []
     if not user_input:
         continue
 
@@ -228,7 +263,7 @@ while True:
             print("❌ No OCR elements found.")
             break
 
-        action = ask_llm_for_action(user_input, elements)
+        action = ask_llm_for_action(user_input, elements, history)
         target_idx = action["index"]
 
         if target_idx == -1 or target_idx >= len(elements):
@@ -251,15 +286,18 @@ while True:
 
         time.sleep(1.5)
         updated_elements = extract_screen_data(driver)
-        judge = ask_if_task_is_done(user_input, updated_elements)
+        judge = ask_if_task_is_done(user_input, updated_elements, action, history)
 
-        if "YES" in judge and "NO" not in judge:
+
+        if "DONE: YES" in judge:
             print("✅ Task completed.")
             task_completed = True
             break
         else:
-            print("🕵️ Not done. Judge says:", judge)
+            print("🕵️ Not done. Judge says:")
+            print(judge)
             tries += 1
+        history.append(action)
 
     if not task_completed:
         print("❌ Failed after max tries.")
