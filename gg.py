@@ -62,10 +62,7 @@ def extract_screen_data(driver):
         print(f"Error during OCR processing: {e}")
 
     # === Drawing the OCR result ===
-    import os
-    import numpy as np
-    from paddleocr import draw_ocr
-    from PIL import Image
+
 
     default_fonts = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -140,16 +137,22 @@ REASON: explain your choice
 
 
 
-# === Click using JavaScript at pixel coordinates ===
 def click_at_pixel(driver, x, y):
     script = f"""
-    const el = document.elementFromPoint({x}, {y});
+    let x = {x}, y = {y};
+    let el = document.elementFromPoint(x, y);
+
+    // Attempt to get a better clickable ancestor
+    if (el && !el.onclick && !el.tagName.match(/BUTTON|A|INPUT/)) {{
+        el = el.closest('button, a, input, [onclick]');
+    }}
+
     if (el) {{
-        // Visual marker
+        // Optional visual feedback
         const circle = document.createElement('div');
         circle.style.position = 'fixed';
-        circle.style.left = '{x - 10}px';
-        circle.style.top = '{y - 10}px';
+        circle.style.left = (x - 10) + 'px';
+        circle.style.top = (y - 10) + 'px';
         circle.style.width = '20px';
         circle.style.height = '20px';
         circle.style.borderRadius = '50%';
@@ -167,34 +170,42 @@ def click_at_pixel(driver, x, y):
             circle.remove();
         }}, 500);
 
-        // Simulate real click
-        const rect = el.getBoundingClientRect();
+        // Focus and hover (optional)
+        el.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }}));
+        el.focus();
+
+        // Dispatch both a real click event and fallback to .click()
         const evt = new MouseEvent('click', {{
             view: window,
             bubbles: true,
             cancelable: true,
-            clientX: {x},
-            clientY: {y}
+            clientX: x,
+            clientY: y
         }});
         el.dispatchEvent(evt);
+
+        // Fallback for frameworks
+        el.click();
     }}
     """
     driver.execute_script(script)
 
 
 
+
 # === Type using JavaScript ===
 from selenium.webdriver.common.keys import Keys
 
-def type_into_active_element(driver, text, press_enter=True):
+def type_into_active_element(driver, action, press_enter=True):
     try:
         el = driver.switch_to.active_element
         el.clear()
-        el.send_keys(text)
+        el.send_keys(action["text"])
         if press_enter:
             el.send_keys(Keys.ENTER)
     except Exception as e:
         print(f"❌ Typing failed: {e}")
+        action["action"] = "failed to type"
 
 
 # === Ask Gemini if task is done ===
@@ -222,11 +233,14 @@ A user is trying to complete this task:
 - After typing, Enter is automatically pressed.
 - The system only sees English characters. Non-English text may show as "000000".
 - Sometimes search bars are already filled with text. If you can't find a place to type, consider clicking a clear (❌) button, a "back" button, or navigating to the main page.
-
+- if ACTION: include failed to type, then the action is not done.
 The current visible screen contains:
 {visible}
 
 {action_summary}
+
+history of actions:
+{history}
 
 Has the task been completed? Respond in this format:
 DONE: YES or NO
@@ -282,7 +296,9 @@ while True:
             print(f"⌨️ Typing '{action['text']}' at ({center_x}, {center_y})")
             click_at_pixel(driver, center_x, center_y)
             time.sleep(0.5)
-            type_into_active_element(driver, action["text"])
+            
+            type_into_active_element(driver, action)
+
 
         time.sleep(1.5)
         updated_elements = extract_screen_data(driver)
