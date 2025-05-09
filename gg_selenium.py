@@ -1,3 +1,4 @@
+import io
 import re
 import time
 import google.generativeai as genai
@@ -6,8 +7,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
 from htmlrag import clean_html
+from PIL import Image
 
-GEMINI_API_KEY = "AIzaSyC41esgj-53XXtVbfd709fjKeejf6vdOYA"
+GEMINI_API_KEY = "AIzaSyANUrRaMqK5vPP3quJEplBxtlPflSjBlO4"
 genai.configure(api_key=GEMINI_API_KEY)
 
 options = webdriver.ChromeOptions()
@@ -28,54 +30,69 @@ generation_config = genai.GenerationConfig(
 model = genai.GenerativeModel(
     "models/gemini-2.0-flash", generation_config=generation_config)
 
-MAX_TRIES = 7
+MAX_TRIES = 10
+
+
+def prune_html(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "meta", "link", "noscript", "iframe", "head"]):
+        tag.decompose()
+    for tag in soup.find_all(lambda t: t.has_attr("style") and (
+            "display:none" in t["style"] or "opacity:0" in t["style"])
+            or t.has_attr("hidden")
+            or (t.has_attr("aria-hidden") and t["aria-hidden"] == "true")):
+        tag.unwrap()
+    relevant_tags = ["a", "button", "input", "textarea", "select", "option", "label", "form",
+                     "table", "tr", "td", "th", "h1", "h2", "h3", "p", "li", "ul", "ol"]
+    for tag in soup.find_all(True):
+        if tag.name not in relevant_tags:
+            tag.unwrap()
+    for tag in soup.find_all(relevant_tags):
+        for attr in ["class", "id", "style", "onclick", "onmouseover", "data-*", "aria-*"]:
+            tag.attrs.pop(attr, None)
+    simplified_html = str(soup)
+
+    simplified_html = clean_html(simplified_html)
+    simplified_html = BeautifulSoup(simplified_html, "html.parser")
+    simplified_html = simplified_html.prettify()
+    return simplified_html[:100000]
+
+def get_screenshot_from_driver(driver, save_path="screen.png"):
+    screenshot = driver.get_screenshot_as_png()
+    image = Image.open(io.BytesIO(screenshot)).convert("RGB")
+    image.save(save_path)
+    return save_path
 
 
 # def prune_html(html):
 #     soup = BeautifulSoup(html, "html.parser")
 #     for tag in soup(["script", "style", "meta", "link", "noscript", "iframe", "head"]):
 #         tag.decompose()
-#     for tag in soup.find_all(lambda t: t.has_attr("style") and (
-#             "display:none" in t["style"] or "opacity:0" in t["style"])
-#             or t.has_attr("hidden")
-#             or (t.has_attr("aria-hidden") and t["aria-hidden"] == "true")):
-#         tag.unwrap()
-#     relevant_tags = ["a", "button", "input", "textarea", "select", "option", "label", "form",
-#                      "table", "tr", "td", "th", "h1", "h2", "h3", "p", "li", "ul", "ol"]
-#     for tag in soup.find_all(True):
-#         if tag.name not in relevant_tags:
-#             tag.unwrap()
-#     for tag in soup.find_all(relevant_tags):
-#         for attr in ["class", "id", "style", "onclick", "onmouseover", "data-*", "aria-*"]:
-#             tag.attrs.pop(attr, None)
-#     simplified_html = str(soup)
+
+#     visible_tags = soup.select(
+#         "a, button, input, textarea, select, option, label, form, table, tr, td, th, h1, h2, h3, p, li, ul, ol")
+#     new_soup = BeautifulSoup("", "html.parser")
+#     for tag in visible_tags:
+#         new_soup.append(tag)
+
+#     for tag in new_soup.find_all(True):
+#         for attr in list(tag.attrs.keys()):
+#             if attr in ["class", "id", "style", "onclick", "onmouseover"] or attr.startswith("data-") or attr.startswith("aria-"):
+#                 del tag.attrs[attr]
+#     simplified_html = str(new_soup)[:100000]
 
 #     # simplified_html = clean_html(simplified_html)
 #     # simplified_html = BeautifulSoup(simplified_html, "html.parser")
 #     # simplified_html = simplified_html.prettify()
-#     return simplified_html[:100000]
+#     return str(simplified_html)
 
-def prune_html(html):
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "meta", "link", "noscript", "iframe", "head"]):
-        tag.decompose()
 
-    visible_tags = soup.select(
-        "a, button, input, textarea, select, option, label, form, table, tr, td, th, h1, h2, h3, p, li, ul, ol")
-    new_soup = BeautifulSoup("", "html.parser")
-    for tag in visible_tags:
-        new_soup.append(tag)
-
-    for tag in new_soup.find_all(True):
-        for attr in list(tag.attrs.keys()):
-            if attr in ["class", "id", "style", "onclick", "onmouseover"] or attr.startswith("data-") or attr.startswith("aria-"):
-                del tag.attrs[attr]
-    simplified_html = str(new_soup)[:100000]
-
-    simplified_html = clean_html(simplified_html)
-    simplified_html = BeautifulSoup(simplified_html, "html.parser")
-    simplified_html = simplified_html.prettify()
-    return str(simplified_html)
+def get_visible_texts():
+    elements = driver.find_elements(
+        By.XPATH, "//*[normalize-space(text()) != '']")
+    visible_texts = [elem.text.strip()
+                     for elem in elements if elem.is_displayed()]
+    return "\n".join(visible_texts)
 
 
 def get_current_html():
@@ -134,6 +151,7 @@ def ask_if_task_is_done(goal, html, last_action, history):
         if history
         else "None yet"
     )
+    visible_text = get_visible_texts()
     action_summary = f"""
 Last action:
 Command: {last_action['command']}
@@ -151,7 +169,7 @@ System limitations:
 Past steps:
 {history_text}
 
-Current Pruned website: {html}
+Current visble text shown in HTML: {visible_text}
 
 {action_summary}
 
@@ -169,15 +187,8 @@ DONE: YES or NO
 ADVICE: (If NO, explain next possible step or issue)
 """
     result = model.generate_content(prompt)
+    # print("prompt:", prompt)
     return result.text.strip()
-
-
-def get_visible_texts():
-    elements = driver.find_elements(
-        By.XPATH, "//*[normalize-space(text()) != '']")
-    visible_texts = [elem.text.strip()
-                     for elem in elements if elem.is_displayed()]
-    return "\n".join(visible_texts)
 
 
 def execute_code(code):
