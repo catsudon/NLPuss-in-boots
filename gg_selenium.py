@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from htmlrag import clean_html
 from PIL import Image
 
-GEMINI_API_KEY = "AIzaSyANUrRaMqK5vPP3quJEplBxtlPflSjBlO4"
+GEMINI_API_KEY = "AIzaSyC41esgj-53XXtVbfd709fjKeejf6vdOYA"
 genai.configure(api_key=GEMINI_API_KEY)
 
 options = webdriver.ChromeOptions()
