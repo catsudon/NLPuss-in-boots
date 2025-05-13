@@ -52,9 +52,9 @@ def prune_html(html):
             tag.attrs.pop(attr, None)
     simplified_html = str(soup)
 
-    simplified_html = clean_html(simplified_html)
-    simplified_html = BeautifulSoup(simplified_html, "html.parser")
-    simplified_html = simplified_html.prettify()
+    # simplified_html = clean_html(simplified_html)
+    # simplified_html = BeautifulSoup(simplified_html, "html.parser")
+    # simplified_html = simplified_html.prettify()
     return simplified_html[:100000]
 
 def get_screenshot_from_driver(driver, save_path="screen.png"):
