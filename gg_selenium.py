@@ -52,9 +52,9 @@ def prune_html(html):
             tag.attrs.pop(attr, None)
     simplified_html = str(soup)
 
-    # simplified_html = clean_html(simplified_html)
-    # simplified_html = BeautifulSoup(simplified_html, "html.parser")
-    # simplified_html = simplified_html.prettify()
+    simplified_html = clean_html(simplified_html)
+    simplified_html = BeautifulSoup(simplified_html, "html.parser")
+    simplified_html = simplified_html.prettify()
     return simplified_html[:100000]
 
 def get_screenshot_from_driver(driver, save_path="screen.png"):
@@ -63,28 +63,6 @@ def get_screenshot_from_driver(driver, save_path="screen.png"):
     image.save(save_path)
     return save_path
 
-
-# def prune_html(html):
-#     soup = BeautifulSoup(html, "html.parser")
-#     for tag in soup(["script", "style", "meta", "link", "noscript", "iframe", "head"]):
-#         tag.decompose()
-
-#     visible_tags = soup.select(
-#         "a, button, input, textarea, select, option, label, form, table, tr, td, th, h1, h2, h3, p, li, ul, ol")
-#     new_soup = BeautifulSoup("", "html.parser")
-#     for tag in visible_tags:
-#         new_soup.append(tag)
-
-#     for tag in new_soup.find_all(True):
-#         for attr in list(tag.attrs.keys()):
-#             if attr in ["class", "id", "style", "onclick", "onmouseover"] or attr.startswith("data-") or attr.startswith("aria-"):
-#                 del tag.attrs[attr]
-#     simplified_html = str(new_soup)[:100000]
-
-#     # simplified_html = clean_html(simplified_html)
-#     # simplified_html = BeautifulSoup(simplified_html, "html.parser")
-#     # simplified_html = simplified_html.prettify()
-#     return str(simplified_html)
 
 
 def get_visible_texts():
