@@ -12,7 +12,7 @@ go to amazon shopping and buy an airpods, add one into cart is okay
 go to shopee and login using dummy account
 open https://cugetreg.com/S/courses and find subject that is 2110336 which is software engineering 2 and then open that subject
 
-
+open https://cugetreg.com/S/courses and search for subject that is 2110336 which is software engineering 2 and then open that subject
 
 **hard task**
 watch naruto shippuden on bilibili
